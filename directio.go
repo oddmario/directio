@@ -9,30 +9,37 @@ import (
 
 const (
 	// O_DIRECT alignment is 512B
-	blockSize = 512
+	defaultBlockSize = 512
 
-	// Default buffer is 8KB (2 pages).
-	defaultBufSize = 8192
+	// Default buffer is 16KB (4 pages).
+	defaultBufSize = 16384
 )
 
 var _ io.WriteCloser = (*DirectIO)(nil)
 
-// align returns an offset for alignment.
-func align(b []byte) int {
-	return int(uintptr(unsafe.Pointer(&b[0])) & uintptr(blockSize-1))
+// align returns an offset for alignment for buffer b and size.
+func align(b []byte, size int) int {
+	if size <= 0 || len(b) == 0 {
+		return 0
+	}
+
+	return int(uintptr(unsafe.Pointer(&b[0])) % uintptr(size))
 }
 
-// allocAlignedBuf allocates buffer that is aligned by blockSize.
-func allocAlignedBuf(n int) ([]byte, error) {
-	if n == 0 {
-		return nil, errors.New("size is `0` can't allocate buffer")
+// allocAlignedBuf allocates buffer of size n that is aligned by blockSize.
+func allocAlignedBuf(blockSize, n int) ([]byte, error) {
+	if blockSize <= 0 {
+		return nil, errors.New("invalid block size")
+	}
+	if n <= 0 {
+		return nil, errors.New("size must be greater than zero")
 	}
 
 	// Allocate memory buffer
 	buf := make([]byte, n+blockSize)
 
 	// First memmory alignment
-	a1 := align(buf)
+	a1 := align(buf, blockSize)
 	offset := 0
 	if a1 != 0 {
 		offset = blockSize - a1
@@ -46,7 +53,7 @@ func allocAlignedBuf(n int) ([]byte, error) {
 	}
 
 	// Second alignment – check and exit
-	a2 := align(buf)
+	a2 := align(buf, blockSize)
 	if a2 != 0 {
 		return nil, errors.New("can't allocate aligned buffer")
 	}
@@ -56,10 +63,11 @@ func allocAlignedBuf(n int) ([]byte, error) {
 
 // DirectIO bypasses page cache.
 type DirectIO struct {
-	f   *os.File
-	buf []byte
-	n   int
-	err error
+	f         *os.File
+	buf       []byte
+	n         int
+	err       error
+	blockSize int
 }
 
 // NewSize returns a new DirectIO writer.
@@ -68,23 +76,40 @@ func NewSize(f *os.File, size int) (*DirectIO, error) {
 		return nil, err
 	}
 
-	if size%blockSize != 0 {
-		// align to blockSize
-		size = size & -blockSize
+	blockSize := defaultBlockSize
+
+	// query kernel
+	dioAlign, err := DIOMemAlign(f.Name())
+	switch {
+	case err == nil && dioAlign > 0:
+		blockSize = int(dioAlign)
+	case err == nil:
+		// kernel returned 0 alignment - fall back to default
+	case errors.Is(err, ErrFSNoDIOSupport):
+		// fall back to default
+	default:
+		return nil, err
 	}
 
+	if size <= 0 {
+		size = defaultBufSize
+	}
 	if size < defaultBufSize {
 		size = defaultBufSize
 	}
+	if rem := size % blockSize; rem != 0 {
+		size += blockSize - rem
+	}
 
-	buf, err := allocAlignedBuf(size)
+	buf, err := allocAlignedBuf(blockSize, size)
 	if err != nil {
 		return nil, err
 	}
 
 	return &DirectIO{
-		buf: buf,
-		f:   f,
+		buf:       buf,
+		f:         f,
+		blockSize: blockSize,
 	}, nil
 }
 
@@ -124,14 +149,12 @@ func (d *DirectIO) Flush() error {
 	fd := d.f.Fd()
 
 	// Disable direct IO
-	err := setDirectIO(fd, false)
-	if err != nil {
+	if err := setDirectIO(fd, false); err != nil {
 		return err
 	}
 
-	// Making write without alignment
-	err = d.flush()
-	if err != nil {
+	// Perform flush with direct IO disabled
+	if err := d.flush(); err != nil {
 		return err
 	}
 
@@ -156,9 +179,9 @@ func (d *DirectIO) Write(p []byte) (nn int, err error) {
 		// Check if buffer is zero size for direct and zero copy write to Writer.
 		// Here we also check the p memory alignment.
 		// If buffer p is not aligned, than write through buffer d.buf and flush.
-		if d.Buffered() == 0 && align(p) == 0 {
+		if d.Buffered() == 0 && align(p, d.blockSize) == 0 {
 			// Large write, empty buffer.
-			if (len(p) % blockSize) == 0 {
+			if (len(p) % d.blockSize) == 0 {
 				// Data and buffer p are already aligned to block size.
 				// So write directly from p to avoid copy.
 				n, d.err = d.f.Write(p)
@@ -166,7 +189,7 @@ func (d *DirectIO) Write(p []byte) (nn int, err error) {
 				// Data needs alignment. Buffer alredy aligned.
 
 				// Align data
-				l := len(p) & -blockSize
+				l := len(p) & -d.blockSize
 
 				// Write directly from p to avoid copy.
 				var nl int

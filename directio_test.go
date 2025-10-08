@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 package directio
@@ -5,10 +6,10 @@ package directio
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 var (
@@ -22,8 +23,8 @@ var (
 )
 
 func tmpDir(t testing.TB) (string, func()) {
-	dir, err := ioutil.TempDir("", "directio-test-")
-	if err != nil {
+	dir := fmt.Sprintf("/var/tmp/directio-test-%s", time.Now().Format("20060102150405"))
+	if err := os.Mkdir(dir, os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
 
@@ -88,7 +89,7 @@ func TestWriter(t *testing.T) {
 		fname := f.Name()
 		f.Close()
 
-		written, err := ioutil.ReadFile(fname)
+		written, err := os.ReadFile(fname)
 		if err != nil {
 			t.Fatal(err)
 		}

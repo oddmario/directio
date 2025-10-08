@@ -2,6 +2,9 @@
 
 Direct IO writer using O_DIRECT
 
+> [!WARNING]
+> `/tmp/` in modern systems doesn't supoprt Direct I/O, for tests use `/var/tmp` instead.
+
 Example:
 
 ```go
@@ -20,7 +23,7 @@ import (
 func main() {
     // Open file with O_DIRECT
     flags := os.O_WRONLY | os.O_EXCL | os.O_CREATE | syscall.O_DIRECT
-    f, err := os.OpenFile("/tmp/mini.iso", flags, 0644)
+    f, err := os.OpenFile("/var/tmp/mini.iso", flags, 0644)
     if err != nil {
         log.Fatal(err)
     }
