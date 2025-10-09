@@ -52,7 +52,7 @@ func main() {
 Check that dio bypass linux pagecache using `vmtouch`:
 
 ```bash
-$ vmtouch /tmp/mini.iso
+$ vmtouch /var/tmp/mini.iso
            Files: 1
      Directories: 0
   Resident Pages: 1/16384  4K/64M  0.0061%
@@ -62,7 +62,7 @@ $ vmtouch /tmp/mini.iso
 or using my `https://github.com/brk0v/cpager` to check per cgroup pagecache usage:
 
 ```bash
-$ sudo ~/go/bin/cpager /tmp/mini.iso
+$ sudo ~/go/bin/cpager /var/tmp/mini.iso
          Files: 1
    Directories: 0
 Resident Pages: 1/16385 4K/64M 0.0%
