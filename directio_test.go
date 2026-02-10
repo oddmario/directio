@@ -82,8 +82,8 @@ func TestWriter(t *testing.T) {
 			point += nwrite
 		}
 
-		if e := dio.Flush(); e != nil {
-			t.Errorf("%s: buf.Flush = %v", context, e)
+		if e := dio.Close(); e != nil {
+			t.Errorf("%s: buf.Close = %v", context, e)
 		}
 
 		fname := f.Name()
