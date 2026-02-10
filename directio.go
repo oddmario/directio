@@ -144,24 +144,6 @@ func (d *DirectIO) flush() error {
 	return err
 }
 
-// Flush writes buffered data to the underlying file.
-func (d *DirectIO) Flush() error {
-	fd := d.f.Fd()
-
-	// Disable direct IO
-	if err := setDirectIO(fd, false); err != nil {
-		return err
-	}
-
-	// Perform flush with direct IO disabled
-	if err := d.flush(); err != nil {
-		return err
-	}
-
-	// Enable direct IO back
-	return setDirectIO(fd, true)
-}
-
 // Available returns how many bytes are unused in the buffer.
 func (d *DirectIO) Available() int { return len(d.buf) - d.n }
 
@@ -225,12 +207,57 @@ func (d *DirectIO) Write(p []byte) (nn int, err error) {
 	return nn, nil
 }
 
+// Close writes any data left in the writer buffer
+// 
+// Note that this function doesn't close the underlying os.File
+// it's the caller's responsibility to close the underlying os.File
+// 
+// If the last bit of data aren't in a perfect aligned block, Close also calls Sync() on the underlying os.File
 func (d *DirectIO) Close() error {
-	if d.err == nil {
-		err := d.Flush()
+	if d.n == 0 {
+		return nil
+	}
+
+	// 1. Calculate the bulk size that is safe for O_DIRECT
+	//    (Must be a multiple of blockSize)
+	alignedSize := d.n - (d.n % d.blockSize)
+
+	// 2. Phase 1: Write the Aligned Bulk (Direct I/O)
+	//    We do this first while O_DIRECT is still enabled.
+	if alignedSize > 0 {
+		n, err := d.f.Write(d.buf[:alignedSize])
 		if err != nil {
 			return err
 		}
+
+		// Shift the remaining "tail" data to the start of the buffer
+		copy(d.buf, d.buf[n:d.n])
+		d.n -= n
 	}
-	return d.f.Close()
+
+	// 3. Phase 2: Write the Tail (Buffered I/O)
+	//    If there are any bytes left (the unaligned remainder),
+	//    we must disable O_DIRECT to write them safely.
+	if d.n > 0 {
+		// Disable Direct IO temporarily
+		if err := setDirectIO(d.f.Fd(), false); err != nil {
+			return err
+		}
+
+		// Standard buffered write (touches Page Cache)
+		n, err := d.f.Write(d.buf[:d.n])
+
+		// CRITICAL: Re-enable Direct IO immediately
+		// Even if the write failed, we try to restore the state.
+		_ = setDirectIO(d.f.Fd(), true)
+
+		if err != nil {
+			return err
+		}
+		d.n -= n
+
+		d.f.Sync() // sync the file to flush the final bit of data to the disk immediately
+	}
+
+	return nil
 }
