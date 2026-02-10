@@ -1,4 +1,4 @@
-module github.com/brk0v/directio
+module github.com/oddmario/directio
 
 go 1.24.2
 
