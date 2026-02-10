@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer dio.Flush()
+	defer dio.Close()
 
 	// Downloading iso image
 	resp, err := http.Get("http://archive.ubuntu.com/ubuntu/dists/bionic/main/installer-amd64/current/images/netboot/mini.iso")
