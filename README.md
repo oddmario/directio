@@ -2,6 +2,15 @@
 
 Direct IO writer using O_DIRECT
 
+## Why the fork?
+The original project is really amazing, However in certain cases it can cause dome data to be written on the pagecache when `Flush()` gets called.
+
+The original project's `Flush()` function disables O_DIRECT, writes the remaining data then re-enables O_DIRECT. I understand why it's made like this (because maybe the remaining data don't perfectly align into a disk page)
+
+My fork aims to solve this by minimizing the data written to the pagecache as much as possible. The `Flush()` function was replaced with the `Close()` one.
+
+With my fork, you must call `Close()` after writing everything to ensure that everything gets written to the disk. Note that with the original project, you also must call `Flush()` after writing everything.
+
 > [!WARNING]
 > `/tmp/` in modern systems doesn't supoprt Direct I/O, for tests use `/var/tmp` instead.
 
