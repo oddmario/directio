@@ -114,19 +114,6 @@ func NewSize(f *os.File, size int) (*DirectIO, error) {
 
 	blockSize := align
 
-	// query kernel
-	dioAlign, err := DIOMemAlign(f.Name())
-	switch {
-	case err == nil && dioAlign > 0:
-		blockSize = int(dioAlign)
-	case err == nil:
-		// kernel returned 0 alignment - fall back to default
-	case errors.Is(err, ErrFSNoDIOSupport):
-		// fall back to default
-	default:
-		return nil, err
-	}
-
 	if size <= 0 {
 		size = defaultBufSize
 	}
