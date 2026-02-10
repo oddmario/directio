@@ -68,6 +68,7 @@ type DirectIO struct {
 	n         int
 	err       error
 	blockSize int
+	isClosed  bool
 }
 
 // NewSize returns a new DirectIO writer.
@@ -110,6 +111,7 @@ func NewSize(f *os.File, size int) (*DirectIO, error) {
 		buf:       buf,
 		f:         f,
 		blockSize: blockSize,
+		isClosed:  false,
 	}, nil
 }
 
@@ -155,6 +157,10 @@ func (d *DirectIO) Buffered() int { return d.n }
 // If nn < len(p), it also returns an error explaining
 // why the write is short.
 func (d *DirectIO) Write(p []byte) (nn int, err error) {
+	if d.isClosed {
+		return 0, errors.New("the writer is closed")
+	}
+
 	// Write more than available in buffer.
 	for len(p) >= d.Available() && d.err == nil {
 		var n int
@@ -208,12 +214,20 @@ func (d *DirectIO) Write(p []byte) (nn int, err error) {
 }
 
 // Close writes any data left in the writer buffer
-// 
+//
 // Note that this function doesn't close the underlying os.File
 // it's the caller's responsibility to close the underlying os.File
-// 
+//
 // If the last bit of data aren't in a perfect aligned block, Close also calls Sync() on the underlying os.File
 func (d *DirectIO) Close() error {
+	if d.isClosed {
+		return errors.New("the writer is already closed")
+	}
+
+	defer func() {
+		d.isClosed = true
+	}()
+
 	if d.n == 0 {
 		return nil
 	}
