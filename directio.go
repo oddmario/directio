@@ -4,13 +4,12 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path/filepath"
+	"syscall"
 	"unsafe"
 )
 
 const (
-	// O_DIRECT alignment is 512B
-	defaultBlockSize = 512
-
 	// Default buffer is 16KB (4 pages).
 	defaultBufSize = 16384
 )
@@ -71,13 +70,49 @@ type DirectIO struct {
 	isClosed  bool
 }
 
+func GetBestAlignment(path string) int {
+	var stat syscall.Statfs_t
+
+	// Ensure we check the directory if the file doesn't exist yet
+	checkPath := path
+	if info, err := os.Stat(path); err != nil || !info.IsDir() {
+		checkPath = filepath.Dir(path)
+	}
+
+	if err := syscall.Statfs(checkPath, &stat); err != nil {
+		// Fallback: 4KB is the safest bet for almost all modern Linux servers
+		return 4096
+	}
+
+	// Usually 4096 on ext4/xfs/btrfs
+	blockSize := int(stat.Bsize)
+
+	// O_DIRECT usually requires at least 512.
+	// If Statfs returns something weird (like 0 or 1), force 4096.
+	if blockSize < 512 {
+		return 4096
+	}
+
+	// Optimization: If the FS says 512, but we are on a 4Kn drive,
+	// 512 writes will be slow (Read-Modify-Write).
+	// It is almost always better to upgrade 512 -> 4096.
+	if blockSize < 4096 {
+		return 4096
+	}
+
+	return blockSize
+}
+
 // NewSize returns a new DirectIO writer.
 func NewSize(f *os.File, size int) (*DirectIO, error) {
 	if err := checkDirectIO(f.Fd()); err != nil {
 		return nil, err
 	}
 
-	blockSize := defaultBlockSize
+	// Get the file optimal block size dynamically
+	align := GetBestAlignment(f.Name())
+
+	blockSize := align
 
 	// query kernel
 	dioAlign, err := DIOMemAlign(f.Name())
