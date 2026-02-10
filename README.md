@@ -17,7 +17,7 @@ import (
     "os"
     "syscall"
 
-    "github.com/brk0v/directio"
+    "github.com/oddmario/directio"
 )
 
 func main() {
