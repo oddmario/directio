@@ -98,6 +98,8 @@ func GetBestAlignment(path string) int {
 	// Optimization: If the FS says 512, but we are on a 4Kn drive,
 	// 512 writes will be slow (Read-Modify-Write).
 	// It is almost always better to upgrade 512 -> 4096.
+	// Remember that it's always best to use the disk's PHY-SEC and not its LOG-SEC (you can check that using `lsblk -o NAME,PHY-SEC,LOG-SEC`). The disk's LOG-SEC is an emulated value which exists so the disk can support older kernel versions.
+	// Note that the DIOMemAlign() function in statx.go uses Statx to ask the kernel to get the disk's sector size. However in most cases, the kernel returns the LOG-SEC instead of the PHY-SEC, and this results in issues with short-sized writes. That's why we no longer rely on statx.go in this fork of the project
 	if blockSize < 4096 {
 		return 4096
 	}
