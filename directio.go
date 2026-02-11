@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -246,9 +248,7 @@ func (d *DirectIO) Close() error {
 		return errors.New("the writer is already closed")
 	}
 
-	defer func() {
-		d.isClosed = true
-	}()
+	d.isClosed = true
 
 	if d.n == 0 {
 		return nil
@@ -293,6 +293,13 @@ func (d *DirectIO) Close() error {
 		d.n -= n
 
 		d.f.Sync() // sync the file to flush the final bit of data to the disk immediately
+
+		// Advise the kernel to drop the pagecache immediately for the data that we wrote without O_DIRECT above
+		// Fd() returns uintptr, Fadvise expects int
+		fd := int(d.f.Fd())
+
+		// Arguments: File Descriptor, Offset (0), Length (0 = all), Advice
+		unix.Fadvise(fd, 0, 0, unix.FADV_DONTNEED)
 	}
 
 	return nil
