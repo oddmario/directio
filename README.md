@@ -11,6 +11,8 @@ My fork aims to solve this by minimizing the data written to the pagecache as mu
 
 With my fork, you must call `Close()` after writing everything to ensure that everything gets written to the disk. Note that with the original project, you also must call `Flush()` after writing everything.
 
+-----
+
 > [!WARNING]
 > `/tmp/` in modern systems doesn't supoprt Direct I/O, for tests use `/var/tmp` instead.
 
@@ -64,19 +66,6 @@ Check that dio bypass linux pagecache using `vmtouch`:
 $ vmtouch /var/tmp/mini.iso
            Files: 1
      Directories: 0
-  Resident Pages: 1/16384  4K/64M  0.0061%
+  Resident Pages: 0/16384  0/64M  0%
          Elapsed: 0.000356 seconds
-```
-
-or using my `https://github.com/brk0v/cpager` to check per cgroup pagecache usage:
-
-```bash
-$ sudo ~/go/bin/cpager /var/tmp/mini.iso
-         Files: 1
-   Directories: 0
-Resident Pages: 1/16385 4K/64M 0.0%
-
- cgmem inode    percent       pages        path
-           -     100.0%       16384        not charged
-        2187       0.0%           1        /sys/fs/cgroup/memory/user.slice/user-1000.slice/session-3.scope
 ```
